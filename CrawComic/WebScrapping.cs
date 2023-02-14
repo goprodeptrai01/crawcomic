@@ -1,4 +1,6 @@
 ﻿using HtmlAgilityPack;
+using MongoDB.Bson;
+using MongoDB.Driver;
 using ReadMangaTest.Data;
 using ReadMangaTest.Models;
 using ScrapySharp.Extensions;
@@ -47,7 +49,7 @@ public class WebScrapping
     }
 
     // public List<Category> ScrapeCategory()
-    public List<Category> ScrapeCategory()
+    public List<BsonDocument> ScrapeCategory()
     {
         // URL of the web page you want to scrape data from
         var url = "https://kunmanga.com/manga-genre/action/";
@@ -55,7 +57,7 @@ public class WebScrapping
 
         var categoryNodes = htmlPage.SelectNodes(".//li[@class='col-6 col-sm-4 col-md-2']");
         // Console.WriteLine(categoryNodes);
-        var categories = new List<Category>();
+        var categories = new List<BsonDocument>();
         if (categoryNodes == null)
         {
             Console.WriteLine("No data found on the web page");
@@ -72,32 +74,47 @@ public class WebScrapping
             category.Url = urlCategory;
             category.Description = "";
 
-            categories.Add(category);
+            categories.Add(new BsonDocument
+            {
+                { "Name" , category.Name },
+                { "Url" , category.Url },
+                { "Description" , category.Description },
+            });
         }
 
         // throw new Exception("Debug");
         return categories;
         // return;
-        _context.Categories.AddRange(categories);
-        _context.SaveChanges();
+        // _context.Categories.AddRange(categories);
+        // _context.SaveChanges();
         Console.WriteLine("Data has been saved to the database successfully");
     }
 
-    public void ScrapeComicAndArtist()
+    public async void ScrapeComicAndArtist()
     {
+        var connectionString = "mongodb+srv://datacraw:superta01@cluster0.bodptox.mongodb.net/?retryWrites=true&w=majority";
+        var client = new MongoClient(connectionString);
+        var database = client.GetDatabase("comic");
+        // var collection = database.GetCollection<BsonDocument>("people1");
+        var categoryCollection = database.GetCollection<BsonDocument>("category");
         var categoryList = ScrapeCategory();
-        var comics = new List<Comic>();
-        var artists = new List<Artist>();
-        var comicCategories = new List<ComicCategory>();
-        var chapters = new List<Chapter>();
-        var pages = new List<Page>();
+        var comicCollection = database.GetCollection<BsonDocument>("Comic");
+        var comics = new List<BsonDocument>();
+        var artistCollection = database.GetCollection<BsonDocument>("Artist");
+        var artists = new List<BsonDocument>();
+        var comicCategoryCollection = database.GetCollection<BsonDocument>("ComicCategory");
+        var comicCategories = new List<BsonDocument>();
+        var chapterCollection = database.GetCollection<BsonDocument>("Chapter");
+        var chapters = new List<BsonDocument>();
+        var pageCollection = database.GetCollection<BsonDocument>("Page");
+        var pages = new List<BsonDocument>();
         var nullArtist = new Artist()
         {
             Name = "IsUpdating",
             Description = "Is Updating!",
             Url = "Is Updating!"
         };
-        artists.Add(nullArtist);
+        artists.Add(nullArtist.ToBsonDocument());
         // URL of the web page you want to scrape data from
         var url = "https://kunmanga.com/";
 
@@ -208,11 +225,12 @@ public class WebScrapping
                             Name = nameArtist.InnerHtml.Trim(),
                             Url = nameArtist.Attributes["href"].Value,
                             Description = "",
+                            Comics = new List<Comic>()
                         };
                     }
 
                     Console.WriteLine("Adding comic: " + count);
-                    var comic = new Comic()
+                    var comic = new Comic
                     {
                         Name = nameComic,
                         Description = comicDescriptionNode != null
@@ -221,18 +239,25 @@ public class WebScrapping
                                     .InnerHtml
                                     .Trim()
                                 : comicDescriptionNode.SelectSingleNode(".//div//div[2]") != null
-                                    ? comicDescriptionNode.SelectSingleNode(".//div//div[2]").InnerHtml.Trim()
+                                    ? comicDescriptionNode.SelectSingleNode(".//div//div[2]")
+                                        .InnerHtml.Trim()
                                     : comicDescriptionNode.SelectSingleNode(".//div//div") != null
-                                        ? comicDescriptionNode.SelectSingleNode(".//div//div").InnerHtml.Trim()
+                                        ? comicDescriptionNode.SelectSingleNode(".//div//div")
+                                            .InnerHtml.Trim()
                                         : comicDescriptionNode.SelectSingleNode(".//div//p[2]") != null
-                                            ? comicDescriptionNode.SelectSingleNode(".//div//p[2]").InnerHtml.Trim()
-                                            : comicDescriptionNode.SelectSingleNode(".//div//p").InnerHtml.Trim()
+                                            ? comicDescriptionNode.SelectSingleNode(".//div//p[2]")
+                                                .InnerHtml.Trim()
+                                            : comicDescriptionNode.SelectSingleNode(".//div//p")
+                                                .InnerHtml.Trim()
                             : "",
                         Url = comicNode.SelectSingleNode(".//div[@class='post-title font-title']//h3[@class='h5']//a")
-                            .Attributes["href"].Value,
+                            .Attributes["href"]
+                            .Value,
                         Wallpaper = comicNode.SelectSingleNode(".//div[@class='item-thumb  c-image-hover']//a//img")
-                            .Attributes["src"].Value,
-                        Artist = artist
+                            .Attributes["src"]
+                            .Value,
+                        Artist = artist,
+                        Chapters = new List<Chapter>()
                     };
                     if (listChapterNode == null)
                     {
@@ -246,7 +271,8 @@ public class WebScrapping
                         {
                             Name = chapterNode.SelectSingleNode(".//a").InnerHtml.Trim(),
                             Url = chapterNode.SelectSingleNode(".//a").Attributes["href"].Value,
-                            Comic = comic
+                            Comic = comic,
+                            Pages = new List<Page>()
                         };
                         Console.WriteLine("Adding chapter: " + chapter.Name);
 
@@ -266,14 +292,13 @@ public class WebScrapping
                             {
                                 Name = pageNode.SelectSingleNode(".//img").Attributes["id"].Value + "/" +
                                        pageNodes.Count,
-                                Url = pageNode.SelectSingleNode(".//img").Attributes["src"].Value,
+                                Url = pageNode.SelectSingleNode(".//img").Attributes["src"].Value.Trim(),
                                 Chapter = chapter
                             };
                             Console.WriteLine("Adding page: " + page.Name);
-                            pages.Add(page);
+                            pages.Add(page.ToBsonDocument());
                         }
-
-                        chapters.Add(chapter);
+                        chapters.Add(chapter.ToBsonDocument());
                     }
 
 
@@ -288,14 +313,20 @@ public class WebScrapping
                         var categoryName = nameCategory.InnerHtml.Trim();
                         foreach (var category in categoryList)
                         {
-                            if (category.Name.Equals(categoryName))
+                            if (category.GetElement("Name").ToString().Equals(categoryName))
                             {
                                 var comicCategory = new ComicCategory()
                                 {
                                     Comic = comic,
-                                    Category = category
+                                    Category = new Category()
+                                    {
+                                        Name = category.GetElement("Name").ToString(),
+                                        Url = category.GetElement("Url").ToString(),
+                                        Description = category.GetElement("Description").ToString(),
+                                    }
                                 };
-                                comicCategories.Add(comicCategory);
+                                comic.ComicCategories.Add(comicCategory);
+                                comicCategories.Add(comicCategory.ToBsonDocument());
                             }
                         }
                     }
@@ -303,8 +334,9 @@ public class WebScrapping
 
                     // Console.WriteLine(comic.Name);
                     // Console.WriteLine(comic.Artist.Name);
-                    artists.Add(artist);
-                    comics.Add(comic);
+                    artist.Comics?.Add(comic);
+                    artists.Add(artist.ToBsonDocument());
+                    comics.Add(comic.ToBsonDocument());
                     Console.WriteLine("Done " + count);
                 }
             }
@@ -312,40 +344,21 @@ public class WebScrapping
 
 
         artists = artists.Distinct().ToList();
-        // Console.WriteLine("\nManga: ");
-        // foreach (var comic in comics)
-        // {
-        //     Console.WriteLine(comic.Id);
-        //     Console.WriteLine(comic.Name);
-        // }
-        // Console.WriteLine("\nArtist: ");
-        // foreach (var artist in artists)
-        // {
-        //     Console.WriteLine(artist.Id);
-        //     Console.WriteLine(artist.Name);
-        // }
-        // Console.WriteLine("\nCategory: ");
-        // foreach (var category in categoryList)
-        // {
-        //     Console.WriteLine(category.Id);
-        //     Console.WriteLine(category.Name);
-        // }
-        // Console.WriteLine("\nComic category: ");
-        // foreach (var comicCategory in comicCategories)
-        // {
-        //     Console.WriteLine("Comic: "+comicCategory.ComicId);
-        //     Console.WriteLine("Category: "+comicCategory.CategoryId);
-        // }
-        // return;
 
         // Save the extracted data to the database
-        _context.Artists.AddRange(artists);
-        _context.Comics.AddRange(comics);
-        _context.Categories.AddRange(categoryList);
-        _context.Chapters.AddRange(chapters);
-        _context.Pages.AddRange(pages);
-        _context.ComicCategories.AddRange(comicCategories);
-        _context.SaveChanges();
+        await categoryCollection.InsertManyAsync(categoryList);
+        await comicCollection.InsertManyAsync(comics);
+        await artistCollection.InsertManyAsync(artists);
+        await chapterCollection.InsertManyAsync(chapters);
+        await pageCollection.InsertManyAsync(pages);
+        await comicCategoryCollection.InsertManyAsync(comicCategories);
+        // _context.Artists.AddRange(artists);
+        // _context.Comics.AddRange(comics);
+        // _context.Categories.AddRange(categoryList);
+        // _context.Chapters.AddRange(chapters);
+        // _context.Pages.AddRange(pages);
+        // _context.ComicCategories.AddRange(comicCategories);
+        // _context.SaveChanges();
 
         Console.WriteLine("Data has been saved to the database successfully");
         throw new Exception("Success!");

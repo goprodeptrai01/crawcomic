@@ -9,8 +9,6 @@ public class DataContext: DbContext
     {
     }
 
-    public DbSet<Login> Logins { get; set; }
-    public DbSet<Account> Accounts { get; set; }
     public DbSet<Comic> Comics { get; set; }
     public DbSet<Chapter> Chapters { get; set; }
     public DbSet<Category> Categories { get; set; }
