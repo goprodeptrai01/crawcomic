@@ -1,17 +1,17 @@
-﻿using HtmlAgilityPack;
-using MongoDB.Bson;
-using MongoDB.Driver;
+﻿using System.Net;
+using Firebase.Storage;
+using FirebaseAdmin;
+using Google.Apis.Auth.OAuth2;
+using HtmlAgilityPack;
 using ReadMangaTest.Data;
 using ReadMangaTest.Models;
-using ScrapySharp.Extensions;
 using ScrapySharp.Network;
 
-namespace ReadMangaTest.DataScrapping;
+namespace CrawComic;
 
 public class WebScrapping
 {
     private readonly DataContext _context;
-
     public WebScrapping(DataContext context)
     {
         Console.WriteLine("welcome to scraping");
@@ -48,73 +48,59 @@ public class WebScrapping
         }
     }
 
-    // public List<Category> ScrapeCategory()
-    public List<BsonDocument> ScrapeCategory()
+    // public List<Genre> ScrapeCategory()
+    public List<Genre> ScrapeGenre()
     {
         // URL of the web page you want to scrape data from
         var url = "https://kunmanga.com/manga-genre/action/";
         var htmlPage = GetHtmlNodeByScrapySharp(url);
 
-        var categoryNodes = htmlPage.SelectNodes(".//li[@class='col-6 col-sm-4 col-md-2']");
-        // Console.WriteLine(categoryNodes);
-        var categories = new List<BsonDocument>();
-        if (categoryNodes == null)
+        var genreNodes = htmlPage.SelectNodes(".//li[@class='col-6 col-sm-4 col-md-2']");
+        // Console.WriteLine(GenreNodes);
+        var genres = new List<Genre>();
+        if (genreNodes == null)
         {
             Console.WriteLine("No data found on the web page");
             return null;
         }
 
 
-        foreach (var categoryNode in categoryNodes)
+        foreach (var genreNode in genreNodes)
         {
-            var category = new Category();
-            var nameCategory = categoryNode.SelectSingleNode(".//a").InnerText.Trim().Split('\n').ToArray()[0];
-            category.Name = nameCategory;
-            var urlCategory = categoryNode.SelectSingleNode(".//a").Attributes["href"].Value;
-            category.Url = urlCategory;
-            category.Description = "";
+            var genre = new Genre();
+            var nameGenre = genreNode.SelectSingleNode(".//a").InnerText.Trim().Split('\n').ToArray()[0];
+            genre.Name = nameGenre;
+            var urlGenre = genreNode.SelectSingleNode(".//a").Attributes["href"].Value;
+            genre.Url = urlGenre;
+            genre.Description = "";
 
-            categories.Add(new BsonDocument
-            {
-                { "Name" , category.Name },
-                { "Url" , category.Url },
-                { "Description" , category.Description },
-            });
+            genres.Add(genre);
         }
 
         // throw new Exception("Debug");
-        return categories;
+        return genres;
         // return;
-        // _context.Categories.AddRange(categories);
+        // _context.Genres.AddRange(Genres);
         // _context.SaveChanges();
         Console.WriteLine("Data has been saved to the database successfully");
     }
 
+    [Obsolete("Obsolete")]
     public async void ScrapeComicAndArtist()
     {
-        var connectionString = "mongodb+srv://datacraw:superta01@cluster0.bodptox.mongodb.net/?retryWrites=true&w=majority";
-        var client = new MongoClient(connectionString);
-        var database = client.GetDatabase("comic");
-        // var collection = database.GetCollection<BsonDocument>("people1");
-        var categoryCollection = database.GetCollection<BsonDocument>("category");
-        var categoryList = ScrapeCategory();
-        var comicCollection = database.GetCollection<BsonDocument>("Comic");
-        var comics = new List<BsonDocument>();
-        var artistCollection = database.GetCollection<BsonDocument>("Artist");
-        var artists = new List<BsonDocument>();
-        var comicCategoryCollection = database.GetCollection<BsonDocument>("ComicCategory");
-        var comicCategories = new List<BsonDocument>();
-        var chapterCollection = database.GetCollection<BsonDocument>("Chapter");
-        var chapters = new List<BsonDocument>();
-        var pageCollection = database.GetCollection<BsonDocument>("Page");
-        var pages = new List<BsonDocument>();
+        var genreList = ScrapeGenre();
+        var comics = new List<Comic>();
+        var artists = new List<Artist>();
+        var comicGenres = new List<ComicGenre>();
+        var chapters = new List<Chapter>();
+        var pages = new List<Page>();
         var nullArtist = new Artist()
         {
             Name = "IsUpdating",
             Description = "Is Updating!",
             Url = "Is Updating!"
         };
-        artists.Add(nullArtist.ToBsonDocument());
+        artists.Add(nullArtist);
         // URL of the web page you want to scrape data from
         var url = "https://kunmanga.com/";
 
@@ -208,7 +194,7 @@ public class WebScrapping
 
                     var nameArtist = comicHtmlPage?.SelectSingleNode("//div[@class='author-content']//a");
 
-                    var nameCategories = comicHtmlPage?.SelectNodes(".//div[@class='genres-content']//a");
+                    var nameGenres = comicHtmlPage?.SelectNodes(".//div[@class='genres-content']//a");
 
                     var listChapterNode = comicHtmlPage?.SelectNodes("//li[@class='wp-manga-chapter    ']");
 
@@ -230,6 +216,12 @@ public class WebScrapping
                     }
 
                     Console.WriteLine("Adding comic: " + count);
+                    Console.WriteLine(comicNode.SelectSingleNode(".//div[@class='item-thumb  c-image-hover']//a//img")
+                        .Attributes["src"]
+                        .Value);
+                    var urlWallpaper = await DownloadImageToString(comicNode.SelectSingleNode(".//div[@class='item-thumb  c-image-hover']//a//img")
+                        .Attributes["src"]
+                        .Value, nameComic, "",nameComic+".jpg");
                     var comic = new Comic
                     {
                         Name = nameComic,
@@ -253,10 +245,8 @@ public class WebScrapping
                         Url = comicNode.SelectSingleNode(".//div[@class='post-title font-title']//h3[@class='h5']//a")
                             .Attributes["href"]
                             .Value,
-                        Wallpaper = comicNode.SelectSingleNode(".//div[@class='item-thumb  c-image-hover']//a//img")
-                            .Attributes["src"]
-                            .Value,
-                        Artist = artist,
+                        
+                        Wallpaper = urlWallpaper,
                         Chapters = new List<Chapter>()
                     };
                     if (listChapterNode == null)
@@ -288,45 +278,40 @@ public class WebScrapping
 
                         foreach (var pageNode in pageNodes)
                         {
+                            var pageName = pageNode.SelectSingleNode(".//img").Attributes["id"].Value + "_" + (pageNodes.Count - 1);
+                            var urlPage = await DownloadImageToString(pageNode.SelectSingleNode(".//img").Attributes["src"].Value.Trim(), nameComic, chapter.Name, pageName);
                             var page = new Page()
                             {
-                                Name = pageNode.SelectSingleNode(".//img").Attributes["id"].Value + "/" +
-                                       pageNodes.Count,
-                                Url = pageNode.SelectSingleNode(".//img").Attributes["src"].Value.Trim(),
+                                Name = pageName,
+                                Url = urlPage,
                                 Chapter = chapter
                             };
                             Console.WriteLine("Adding page: " + page.Name);
-                            pages.Add(page.ToBsonDocument());
+                            pages.Add(page);
                         }
-                        chapters.Add(chapter.ToBsonDocument());
+                        chapters.Add(chapter);
                     }
 
 
-                    if (nameCategories == null)
+                    if (nameGenres == null)
                     {
-                        Console.WriteLine("category not found");
+                        Console.WriteLine("Genre not found");
                         continue;
                     }
 
-                    foreach (var nameCategory in nameCategories)
+                    foreach (var nameGenre in nameGenres)
                     {
-                        var categoryName = nameCategory.InnerHtml.Trim();
-                        foreach (var category in categoryList)
+                        var genreName = nameGenre.InnerHtml.Trim();
+                        foreach (var genre in genreList)
                         {
-                            if (category.GetElement("Name").ToString().Equals(categoryName))
+                            if (genre.Name.Equals(genreName))
                             {
-                                var comicCategory = new ComicCategory()
+                                var comicGenre = new ComicGenre()
                                 {
                                     Comic = comic,
-                                    Category = new Category()
-                                    {
-                                        Name = category.GetElement("Name").ToString(),
-                                        Url = category.GetElement("Url").ToString(),
-                                        Description = category.GetElement("Description").ToString(),
-                                    }
+                                    Genre = genre,
                                 };
-                                comic.ComicCategories.Add(comicCategory);
-                                comicCategories.Add(comicCategory.ToBsonDocument());
+                                comicGenres.Add(comicGenre);
                             }
                         }
                     }
@@ -334,9 +319,8 @@ public class WebScrapping
 
                     // Console.WriteLine(comic.Name);
                     // Console.WriteLine(comic.Artist.Name);
-                    artist.Comics?.Add(comic);
-                    artists.Add(artist.ToBsonDocument());
-                    comics.Add(comic.ToBsonDocument());
+                    artists.Add(artist);
+                    comics.Add(comic);
                     Console.WriteLine("Done " + count);
                 }
             }
@@ -346,21 +330,58 @@ public class WebScrapping
         artists = artists.Distinct().ToList();
 
         // Save the extracted data to the database
-        await categoryCollection.InsertManyAsync(categoryList);
-        await comicCollection.InsertManyAsync(comics);
-        await artistCollection.InsertManyAsync(artists);
-        await chapterCollection.InsertManyAsync(chapters);
-        await pageCollection.InsertManyAsync(pages);
-        await comicCategoryCollection.InsertManyAsync(comicCategories);
-        // _context.Artists.AddRange(artists);
-        // _context.Comics.AddRange(comics);
-        // _context.Categories.AddRange(categoryList);
-        // _context.Chapters.AddRange(chapters);
-        // _context.Pages.AddRange(pages);
-        // _context.ComicCategories.AddRange(comicCategories);
-        // _context.SaveChanges();
+        _context.Artists.AddRange(artists);
+        _context.Comics.AddRange(comics);
+        _context.Genres.AddRange(genreList);
+        _context.Chapters.AddRange(chapters);
+        _context.Pages.AddRange(pages);
+        _context.ComicGenres.AddRange(comicGenres);
+        _context.SaveChanges();
 
         Console.WriteLine("Data has been saved to the database successfully");
         throw new Exception("Success!");
+    }
+    [Obsolete("Obsolete")]
+    public async Task<string> DownloadImageToString(string url, string nameComic, string chapter, string namePage)
+    {
+
+        try
+        {
+            Console.WriteLine(url);
+            WebClient client = new WebClient();
+            client.Headers["User-Agent"] = "Mozilla/6.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36";
+            byte[] imageBytes = client.DownloadData(url);
+            var urlImage = await UploadPageToFile(imageBytes, nameComic, chapter, namePage);
+            Console.WriteLine(urlImage);
+            return urlImage;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            return null!;
+        }
+       
+    }
+
+    public async Task<string> UploadPageToFile(byte[] imageBytes, string nameComic, string chapter, string namePage)
+    {
+        // var firebaseApp = FirebaseApp.Create(new AppOptions()
+        // {
+        //     Credential = GoogleCredential.FromFile("D:/GO/Download/crawcomic-firebase-adminsdk-4gkut-68d84f9e7a.json"),
+        //     ProjectId = "crawcomic"
+        // });
+        var storage = new FirebaseStorage("crawcomic.appspot.com");
+        var stream = new MemoryStream(imageBytes);
+        FirebaseStorageTask? task = null;
+        if (chapter == "")
+        {
+            task = storage.Child(nameComic).Child(namePage).PutAsync(stream);
+        }
+        else
+        {
+            task = storage.Child(nameComic).Child(chapter).Child(namePage+".jpg").PutAsync(stream);
+        }
+        var downloadUrl = await task;
+        return downloadUrl;
     }
 }

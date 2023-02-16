@@ -11,21 +11,21 @@ public class DataContext: DbContext
 
     public DbSet<Comic> Comics { get; set; }
     public DbSet<Chapter> Chapters { get; set; }
-    public DbSet<Category> Categories { get; set; }
+    public DbSet<Genre> Genres { get; set; }
     public DbSet<Artist> Artists { get; set; }
     public DbSet<Page> Pages { get; set; }
-    public DbSet<ComicCategory> ComicCategories { get; set; }
+    public DbSet<ComicGenre> ComicGenres { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<ComicCategory>()
+        modelBuilder.Entity<ComicGenre>()
             .HasKey(cg => new { cg.ComicId, cg.CategoryId });
-        modelBuilder.Entity<ComicCategory>()
+        modelBuilder.Entity<ComicGenre>()
             .HasOne(cg => cg.Comic)
             .WithMany(c => c.ComicCategories)
             .HasForeignKey(cg => cg.ComicId);
-        modelBuilder.Entity<ComicCategory>()
-            .HasOne(cg => cg.Category)
+        modelBuilder.Entity<ComicGenre>()
+            .HasOne(cg => cg.Genre)
             .WithMany(g => g.comicCategories)
             .HasForeignKey(cg => cg.CategoryId);
     }

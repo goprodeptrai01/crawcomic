@@ -15,9 +15,9 @@
 //     {
 //         if (!_context.ComicCategories.Any())
 //         {
-//             var comicCategories = new List<ComicCategory>()
+//             var comicCategories = new List<ComicGenre>()
 //             {
-//                 new ComicCategory()
+//                 new ComicGenre()
 //                 {
 //                     Comic = new Comic()
 //                     {
@@ -43,13 +43,13 @@
 //                             }
 //                         }
 //                     },
-//                     Category = new Category()
+//                     Genre = new Genre()
 //                     {
-//                         Name = "Category 1",
+//                         Name = "Genre 1",
 //                         Description = "DesCategory 1"
 //                     }
 //                 },
-//                 new ComicCategory()
+//                 new ComicGenre()
 //                 {
 //                     Comic = new Comic()
 //                     {
@@ -75,9 +75,9 @@
 //                             }
 //                         }
 //                     },
-//                     Category = new Category()
+//                     Genre = new Genre()
 //                     {
-//                         Name = "Category 2",
+//                         Name = "Genre 2",
 //                         Description = "DesCategory 2"
 //                     }
 //                 }

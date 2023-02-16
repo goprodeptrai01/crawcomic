@@ -1,8 +1,6 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿namespace ReadMangaTest.Models;
 
-namespace ReadMangaTest.Models;
-
-public class Artist
+public class Author
 {
     public int Id { get; set; }
     public string Name { get; set; }
